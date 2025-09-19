@@ -19,7 +19,7 @@ const bonusRate = 10;
 const dupDeduct = 5;
 const incorrectDeduct = 10;
 
-const testMode = false;
+const testMode = true;
 
 // Game constants
 // const endPoint = "http://127.0.0.1:5000/";
@@ -581,7 +581,7 @@ async function postData(url = "", data = {}) {
 		method: "POST",
 		mode: "cors",
 		cache: "no-cache",
-		credentials: "same-origin",
+		credentials: "include",
 		headers: {
 			"Content-Type": "application/json",
 		},
@@ -597,7 +597,7 @@ async function getData(url = "") {
 		method: "GET",
 		mode: "cors",
 		cache: "no-cache",
-		credentials: "same-origin",
+		credentials: "include",
 		headers: {
 			"Content-Type": "application/json",
 		},
