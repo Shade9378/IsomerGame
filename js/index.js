@@ -19,7 +19,7 @@ const bonusRate = 10;
 const dupDeduct = 5;
 const incorrectDeduct = 10;
 
-const testMode = false;
+const testMode = true;
 
 // Game constants
 // const endPoint = "http://127.0.0.1:5000/";
@@ -577,19 +577,21 @@ const clearCanvas = () => {
 //////////////////
 
 async function postData(url = "", data = {}) {
-	await fetch(url, {
-		method: "POST",
-		mode: "cors",
-		cache: "no-cache",
-		credentials: "same-origin",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		referrerPolicy: "no-referrer",
-		body: JSON.stringify(data),
-	});
+  const response = await fetch(url, {
+    method: "POST",
+    mode: "cors",
+    cache: "no-cache",
+    headers: { "Content-Type": "application/json" },
+    referrerPolicy: "no-referrer",
+    body: JSON.stringify(data),
+  });
 
-	return data;
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`POST ${url} failed: ${response.status} ${text}`);
+  }
+
+  return response.json();
 }
 
 async function getData(url = "") {
@@ -597,7 +599,7 @@ async function getData(url = "") {
 		method: "GET",
 		mode: "cors",
 		cache: "no-cache",
-		credentials: "same-origin",
+		// credentials: "include",
 		headers: {
 			"Content-Type": "application/json",
 		},
@@ -610,111 +612,93 @@ async function getData(url = "") {
 }
 
 const checkOneMol = async () => {
-	let correct = false;
-	let notDup = false;
-	const molBlock = getMolBlockStr(sketcher);
+  let correct = false;
+  let notDup = false;
+  const molBlock = getMolBlockStr(sketcher);
+
+  const payload = {
+    molBlock: molBlock,
+    level: state.game.level,
+    correctAns: state.game.correctAns,
+  };
+
+  try {
+    // ONE request: stateless server computes directly
+    const response = await postData(endPoint + "/single_result", payload);
+
+    correct = response["correct"];
+    notDup = response["notDup"];
+    const isomerName = response["isomer"];
+    state.game.correctAns = response["correctAns"]; // updated by server
+
+    console.log(response);
 
 	// if(isStraightLine(molBlock)) {
 	// 	alert("NOTICE!!! Avoid drawing the isomer in a straight line. Instead, use a zigzag pattern." +
 	// 		" While it may technically be correct, it is considered bad practice.")
 	// }
 
-	await postData(endPoint + "/game_input", {
-		molBlock: molBlock,
-		level: state.game.level,
-		correctAns: state.game.correctAns,
-	})
-		.then(async (data) => {
-			console.log(data);
-
-			await getData(endPoint + "/single_result").then((response) => {
-				correct = response["correct"];
-				notDup = response["notDup"];
-				const isomerName = response["isomer"];
-				state.game.correctAns = response["correctAns"];
-
-				console.log(response);
-
-				if (correct && notDup) {
-					changeScore(levels[state.game.level].molScore);
-					displayCorrectAns(data["molBlock"], isomerName);
-					clearCanvas();
-					correctSound.play();
-					getMolAlert(correctIcon, CORRECT);
-				} else if (!notDup) {
-					changeScore(-dupDeduct);
-					wrongDupSound.play();
-					getMolAlert(duplicateIcon, DUPLICATED);
-				} else {
-					changeScore(-incorrectDeduct);
-					wrongDupSound.play();
-					getMolAlert(wrongIcon, INCORRECT);
-				}
-			});
-		})
-		.catch((e) => {
-			// console.log(e);
-			changeScore(-incorrectDeduct);
-			wrongDupSound.play();
-			getMolAlert(wrongIcon, INCORRECT);
-		});
+    if (correct && notDup) {
+      changeScore(levels[state.game.level].molScore);
+      displayCorrectAns(molBlock, isomerName);
+      clearCanvas();
+      correctSound.play();
+      getMolAlert(correctIcon, CORRECT);
+    } else if (!notDup) {
+      changeScore(-dupDeduct);
+      wrongDupSound.play();
+      getMolAlert(duplicateIcon, DUPLICATED);
+    } else {
+      changeScore(-incorrectDeduct);
+      wrongDupSound.play();
+      getMolAlert(wrongIcon, INCORRECT);
+    }
+  } catch (e) {
+    console.log(e);
+    changeScore(-incorrectDeduct);
+    wrongDupSound.play();
+    getMolAlert(wrongIcon, INCORRECT);
+  }
 };
 
 const checkMolAndLvl = async () => {
-	const molBlock = getMolBlockStr(sketcher);
+  const molBlock = getMolBlockStr(sketcher);
 
-	postData(endPoint + "/game_input", {
-		molBlock: molBlock,
-		level: state.game.level,
-		correctAns: state.game.correctAns,
-	})
-		.then((data) => {
-			console.log(data);
+  const payload = {
+    molBlock: molBlock,
+    level: state.game.level,
+    correctAns: state.game.correctAns,
+  };
 
-			getData(endPoint + "/level_result").then((response) => {
-				let foundAll = response["foundAll"];
-				// let notDup = response["notDup"];
-				// let correct = response["correct"];
+  try {
+    const response = await postData(endPoint + "/level_result", payload);
 
-				console.log(response);
-				/***if (correct && notDup) {
-					changeScore(levels[state.game.level].molScore);
-					clearCanvas();
-				} ***/
-				///checkOneMol();
+    const foundAll = response["foundAll"];
+    // optionally update correctAns if your backend returns it for level_result
+    // state.game.correctAns = response["correctAns"];
 
-				// assuming that for every 10 seconds early, add [bonusRate] points
-				const timeEarly =
-				levels[state.game.level].maxTime - state.game.time;
+    console.log(response);
 
-				if (foundAll) {
-					// if (correct && notDup) {
-					// 	changeScore(levels[state.game.level].molScore);
-					// }
-					// assuming that for every 10 seconds early, add [bonusRate] points
-					state.game.totalScore +=
-					state.game.lvlScore +
-					(timeEarly > 0
-						? parseInt(timeEarly / 10, 10) * bonusRate
-						: 0);
+    const timeEarly = levels[state.game.level].maxTime - state.game.time;
 
-					clearInterval(intervalId);
-					clearCanvas();
-					if (state.game.level == 7) {
-						endGame();
-					} else {
-						endLevel();
-					}
-				} else {
-					wrongDupSound.play();
-					getMolAlert(unfinishIcon, UNFINISHED);
-				}
-			});
-		})
-		.catch((e) => {
-			console.log(e);
-		});
+    if (foundAll) {
+      state.game.totalScore +=
+        state.game.lvlScore +
+        (timeEarly > 0 ? parseInt(timeEarly / 10, 10) * bonusRate : 0);
+
+      clearInterval(intervalId);
+      clearCanvas();
+      if (state.game.level == 7) endGame();
+      else endLevel();
+    } else {
+      wrongDupSound.play();
+      getMolAlert(unfinishIcon, UNFINISHED);
+    }
+  } catch (e) {
+    console.log(e);
+  }
 };
+
 
 // Game Buttons
 handleClick($("#check-single"), checkOneMol);
